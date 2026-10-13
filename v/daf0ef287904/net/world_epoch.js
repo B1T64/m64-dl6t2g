@@ -2,8 +2,7 @@
 // to wipe: its progress lives in every player's save file and spreads from page to
 // page. So on its first load of a new epoch, each page deletes its save file (stars,
 // keys, doors), and every room name carries the epoch, so pages still running an
-// older epoch never meet the new world to hand the old progress back. The host's
-// castle orders are signed per world name, so they're reset too.
+// older epoch never meet the new world to hand the old progress back.
 
 export const WORLD_EPOCH = 2;
 

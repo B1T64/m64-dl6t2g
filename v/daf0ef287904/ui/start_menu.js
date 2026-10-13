@@ -1,13 +1,8 @@
 // Start menu: before the game starts, the player picks a name, a character and its
 // colors (skin, clothes, overalls, hair and mustache). The pick is remembered in this
 // browser and handed to the game (src/pc/web/web_player.c) by the page.
-// The event's host enters the host code as their name (net/host.js): they play as the
-// host's name, and their signing key is kept here so the code never shows again; anyone
-// else picking the host's name gets a fan's name instead.
-import { HOST_NAME, hostKeyFromCode, isHostKey } from '../net/host.js';
 
 const STORE_KEY = 'sm64web.player';
-const HOST_KEY_STORE = 'sm64web.host';
 const NAME_MAX = 20;
 
 // enum PlayerPart (src/game/player_palette.h)
@@ -88,20 +83,6 @@ function save(pick) {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(pick)); } catch {}
 }
 
-const storedHostKey = () => { try { return localStorage.getItem(HOST_KEY_STORE); } catch { return null; } };
-const storeHostKey = key => {
-  try { if (key) localStorage.setItem(HOST_KEY_STORE, key); else localStorage.removeItem(HOST_KEY_STORE); } catch {}
-};
-
-// The host's key if this name is the host code, or the host's name on the host's own
-// browser; null otherwise
-async function hostKeyFor(name) {
-  const fromCode = await hostKeyFromCode(name).catch(() => null);
-  if (fromCode) return fromCode;
-  const stored = storedHostKey();
-  return name === HOST_NAME && isHostKey(stored) ? stored : null;
-}
-
 // The game refuses names with spaces or characters its font lacks (they become
 // "Player") and reads backslashes as color codes: spaces turn into underscores, and
 // only Latin letters (accents included), digits and common symbols stay
@@ -112,9 +93,8 @@ const isPalette = palette => Array.isArray(palette) && palette.length === 8
 
 const characterOf = model => CHARACTERS.find(c => c.model === model) || CHARACTERS[0];
 
-// Shows the menu; resolves with { name, model, palette, hostKey } (palette: 8 '#rrggbb',
-// PART order; hostKey: hex, or null for everyone but the host) once the player presses
-// Play. `defaultName` fills the name field the first time.
+// Shows the menu; resolves with { name, model, palette } (palette: 8 '#rrggbb', PART order)
+// once the player presses Play. `defaultName` fills the name field the first time.
 export function chooseCharacter(defaultName) {
   const saved = load();
   const pick = {
@@ -143,12 +123,9 @@ export function chooseCharacter(defaultName) {
 
   const nameInput = $('.name');
   nameInput.value = pick.name;
-  // a host code being typed (maybe on stream) stays hidden, like a password
-  const looksLikeCode = name => name.toLowerCase().startsWith('castillo-');
   nameInput.addEventListener('input', () => {
     const clean = cleanName(nameInput.value);
     if (clean !== nameInput.value) nameInput.value = clean;
-    nameInput.type = looksLikeCode(clean) ? 'password' : 'text';
     pick.name = clean;
     render();
   });
@@ -191,7 +168,7 @@ export function chooseCharacter(defaultName) {
 
   function render() {
     root.querySelectorAll('[data-part]').forEach(shape => { shape.setAttribute('fill', pick.palette[Number(shape.dataset.part)]); });
-    $('.preview-name').textContent = looksLikeCode(pick.name) ? '•••' : (pick.name || defaultName);
+    $('.preview-name').textContent = pick.name || defaultName;
     characterButtons.forEach(({ c, button }) => button.setAttribute('aria-pressed', String(c.model === pick.model)));
     const base = characterOf(pick.model).palette;
     outfitButtons.forEach(({ outfit, button }) => {
@@ -205,19 +182,12 @@ export function chooseCharacter(defaultName) {
   render();
 
   return new Promise(resolve => {
-    const play = $('.play');
-    play.addEventListener('click', async () => {
-      play.disabled = true;
-      let name = cleanName(pick.name).replace(/^_+|_+$/g, '') || cleanName(defaultName);
-      const hostKey = await hostKeyFor(name);
-      storeHostKey(hostKey);
-      if (hostKey) name = HOST_NAME;
-      else if (name.toLowerCase() === HOST_NAME.toLowerCase()) name = `Fan_de_${HOST_NAME}`;
-      const result = { ...pick, name };
+    $('.play').addEventListener('click', () => {
+      const result = { ...pick, name: cleanName(pick.name).replace(/^_+|_+$/g, '') || cleanName(defaultName) };
       save(result);
       root.remove();
       style.remove();
-      resolve({ ...result, hostKey });
+      resolve(result);
     });
   });
 }
