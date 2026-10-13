@@ -16,6 +16,7 @@ import { mqttBoard, NO_BOARD } from './board.js';
 import { MetaChannel } from './meta_channel.js';
 import { Census } from './census.js';
 import { CastleGate } from './castle_gate.js';
+import { worldName } from './world_epoch.js';
 import { PeerHub } from './peer_hub.js';
 
 const APP_ID = 'sm64coopdx-web';
@@ -25,7 +26,7 @@ const SETTLE_MS = { local: 500, trystero: 4000 };
 
 export async function startPeerTransport(params = new URLSearchParams(location.search)) {
   const local = params.get('net') === 'local';
-  const world = params.get('room') || 'world';
+  const world = worldName(params.get('room') || 'world');
   const [networks, board] = await Promise.all([
     local ? [localNetwork(APP_ID)] : trysteroNetworks(APP_ID),
     local ? NO_BOARD : mqttBoard(`${APP_ID}/seats`),
