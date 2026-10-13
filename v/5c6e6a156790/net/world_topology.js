@@ -52,6 +52,7 @@ export class WorldTopology {
     this.delivered = new RecentIds(); // relayed messages handed to the game (or the directory)
     this.relayed = new RecentIds();   // ...and those I passed on
     this.exposed = new Set();
+    this.peerJoinListeners = new Set(); // besides onPeerJoined: page features (castle_gate.js)
 
     this.zone = null;           // { name, shard, room }
     this.directory = new Map(); // shard -> members, as last published in my level tree
@@ -69,6 +70,7 @@ export class WorldTopology {
     this.onZoneMessage = () => {};   // (payload, fromId)
     this.onLevelMessage = () => {};  // (payload, originId)
     this.onWorldMessage = () => {};  // (payload, originId)
+    this.onMetaMessage = () => {};   // (payload, originId): world- or room-wide news for the page (meta_channel.js)
 
     this.stopDirectory = every(this.options.directoryMs, () => this.publishOccupancy());
   }
@@ -108,6 +110,10 @@ export class WorldTopology {
   sendZone(payload) { this.zone?.room.send(sealZone(payload)); }
   sendLevel(payload) { this.sendRelayed(KIND.LEVEL, payload); }
   sendWorld(payload) { this.sendRelayed(KIND.WORLD, payload); }
+  sendMeta(payload) { this.sendRelayed(KIND.META, payload); }
+  sendMetaTo(id, payload) {
+    if (this.zone && this.exposed.has(id)) this.zone.room.send(sealZone(payload, KIND.META_ZONE), id);
+  }
 
   // ---- introspection ------------------------------------------------------------
 
@@ -168,10 +174,13 @@ export class WorldTopology {
     this.leaveTrees();
   }
 
+  addPeerJoinListener(listener) { this.peerJoinListeners.add(listener); }
+
   expose(id) {
     if (this.exposed.has(id)) return;
     this.exposed.add(id);
     this.onPeerJoined(id);
+    this.peerJoinListeners.forEach(listener => listener(id));
   }
 
   hide(id) {
@@ -259,7 +268,7 @@ export class WorldTopology {
     const links = [];
     if (this.isDelegate && this.zone && kind !== KIND.DIRECTORY) links.push(this.zone.room);
     if ((kind === KIND.LEVEL || kind === KIND.DIRECTORY) && this.levelTree) links.push(...this.levelTree.links);
-    if (kind === KIND.WORLD && this.backbone) links.push(...this.backbone.links);
+    if ((kind === KIND.WORLD || kind === KIND.META) && this.backbone) links.push(...this.backbone.links);
     return links;
   }
 
@@ -273,8 +282,10 @@ export class WorldTopology {
   receive(link, bytes, from) {
     const message = open(bytes);
     if (!message) return;
-    if (message.kind === KIND.ZONE) {
-      if (link === this.zone?.room) this.onZoneMessage(message.payload, from);
+    if (message.kind === KIND.ZONE || message.kind === KIND.META_ZONE) {
+      if (link !== this.zone?.room) return;
+      if (message.kind === KIND.ZONE) this.onZoneMessage(message.payload, from);
+      else this.onMetaMessage(message.payload, from);
       return;
     }
     if (!isRelayed(message.kind)) return;
@@ -296,7 +307,7 @@ export class WorldTopology {
       if (entry) this.directory.set(entry.shard, entry.members);
       return;
     }
-    const deliver = message.kind === KIND.WORLD ? this.onWorldMessage : this.onLevelMessage;
+    const deliver = { [KIND.WORLD]: this.onWorldMessage, [KIND.LEVEL]: this.onLevelMessage, [KIND.META]: this.onMetaMessage }[message.kind];
     deliver(message.payload, message.origin);
   }
 
