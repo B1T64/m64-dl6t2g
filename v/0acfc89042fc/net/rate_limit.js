@@ -1,8 +1,8 @@
-// Per-sender flood control: a token bucket per id. Honest players stay far below
-// it (presence is 10 messages a second); a flooding one is cut off before the game
-// has to decode anything. Senders whose bucket has refilled are forgotten now and then.
+// Per-sender flood control: a token bucket per id. Honest players stay below it
+// (presence is 10 messages a second, plus the updates of the enemies and bosses
+// their game owns); a flooding one is cut off before the game has to decode anything. Senders whose bucket has refilled are forgotten now and then.
 
-const DEFAULTS = { perSecond: 40, burst: 80, sweepEvery: 1024 };
+const DEFAULTS = { perSecond: 120, burst: 240, sweepEvery: 1024 };
 
 export class RateLimiter {
   constructor(options = {}) {
