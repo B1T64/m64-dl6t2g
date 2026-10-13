@@ -83,9 +83,13 @@ function save(pick) {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(pick)); } catch {}
 }
 
-// The game refuses names with spaces (they become "Player") and reads backslashes as
-// color codes: spaces turn into underscores, backslashes go
-const cleanName = text => text.replace(/\s+/g, '_').replace(/\\/g, '').slice(0, NAME_MAX);
+// The game refuses names with spaces or characters its font lacks (they become
+// "Player") and reads backslashes as color codes: spaces turn into underscores, and
+// only Latin letters (accents included), digits and common symbols stay
+const cleanName = text => text.replace(/\s+/g, '_').replace(/[^!-[]-~À-ÿ]/g, '').slice(0, NAME_MAX);
+
+const isPalette = palette => Array.isArray(palette) && palette.length === 8
+  && palette.every(color => /^#[0-9a-f]{6}$/i.test(color));
 
 const characterOf = model => CHARACTERS.find(c => c.model === model) || CHARACTERS[0];
 
@@ -96,7 +100,7 @@ export function chooseCharacter(defaultName) {
   const pick = {
     name: cleanName(saved.name || defaultName),
     model: characterOf(saved.model).model,
-    palette: Array.isArray(saved.palette) && saved.palette.length === 8 ? saved.palette : [...characterOf(saved.model).palette],
+    palette: isPalette(saved.palette) ? saved.palette : [...characterOf(saved.model).palette],
   };
 
   const style = document.createElement('style');
