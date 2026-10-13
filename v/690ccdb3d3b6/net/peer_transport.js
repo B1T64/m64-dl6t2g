@@ -36,6 +36,11 @@ export async function startPeerTransport(params = new URLSearchParams(location.s
     settleMs: local ? SETTLE_MS.local : SETTLE_MS.trystero,
     board,
   });
+  // the hub is what pages hand the game; the census and castle gate ride on it, so a
+  // page cached from before they existed still gets a working hub
   const meta = new MetaChannel(topology);
-  return { hub: new PeerHub(topology), census: new Census(topology, meta), castle: new CastleGate(topology, meta) };
+  const hub = new PeerHub(topology);
+  hub.census = new Census(topology, meta);
+  hub.castle = new CastleGate(topology, meta);
+  return hub;
 }
