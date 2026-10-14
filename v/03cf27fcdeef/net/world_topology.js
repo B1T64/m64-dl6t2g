@@ -33,7 +33,7 @@ import { HeadCount, NO_BOARD } from './board.js';
 import { every } from './ticker.js';
 
 const DEFAULTS = {
-  capacity: 16,        // matches the 15 remote players a game can draw, plus yourself
+  capacity: 32,        // everyone in a room is drawn: the game has MAX_PLAYERS (32) player slots
   bridgeCapacity: 16,  // leaders per shard of the level tree and the backbone
   maxShards: 255,      // rooms per level (a shard number travels as one byte)
   bridgeMaxShards: 64, // shards per tree: 64 x 16 leaders, some 8000 players
@@ -52,6 +52,7 @@ export class WorldTopology {
     this.delivered = new RecentIds(); // relayed messages handed to the game (or the directory)
     this.relayed = new RecentIds();   // ...and those I passed on
     this.exposed = new Set();
+    this.peerJoinListeners = new Set(); // besides onPeerJoined: page features (castle_gate.js)
 
     this.zone = null;           // { name, shard, room }
     this.directory = new Map(); // shard -> members, as last published in my level tree
@@ -69,7 +70,7 @@ export class WorldTopology {
     this.onZoneMessage = () => {};   // (payload, fromId)
     this.onLevelMessage = () => {};  // (payload, originId)
     this.onWorldMessage = () => {};  // (payload, originId)
-    this.onMetaMessage = () => {};   // (payload, originId): world-wide news for the page (meta_channel.js)
+    this.onMetaMessage = () => {};   // (payload, originId): world- or room-wide news for the page (meta_channel.js)
 
     this.stopDirectory = every(this.options.directoryMs, () => this.publishOccupancy());
   }
@@ -110,6 +111,9 @@ export class WorldTopology {
   sendLevel(payload) { this.sendRelayed(KIND.LEVEL, payload); }
   sendWorld(payload) { this.sendRelayed(KIND.WORLD, payload); }
   sendMeta(payload) { this.sendRelayed(KIND.META, payload); }
+  sendMetaTo(id, payload) {
+    if (this.zone && this.exposed.has(id)) this.zone.room.send(sealZone(payload, KIND.META_ZONE), id);
+  }
 
   // ---- introspection ------------------------------------------------------------
 
@@ -170,10 +174,13 @@ export class WorldTopology {
     this.leaveTrees();
   }
 
+  addPeerJoinListener(listener) { this.peerJoinListeners.add(listener); }
+
   expose(id) {
     if (this.exposed.has(id)) return;
     this.exposed.add(id);
     this.onPeerJoined(id);
+    this.peerJoinListeners.forEach(listener => listener(id));
   }
 
   hide(id) {
@@ -275,8 +282,10 @@ export class WorldTopology {
   receive(link, bytes, from) {
     const message = open(bytes);
     if (!message) return;
-    if (message.kind === KIND.ZONE) {
-      if (link === this.zone?.room) this.onZoneMessage(message.payload, from);
+    if (message.kind === KIND.ZONE || message.kind === KIND.META_ZONE) {
+      if (link !== this.zone?.room) return;
+      if (message.kind === KIND.ZONE) this.onZoneMessage(message.payload, from);
+      else this.onMetaMessage(message.payload, from);
       return;
     }
     if (!isRelayed(message.kind)) return;

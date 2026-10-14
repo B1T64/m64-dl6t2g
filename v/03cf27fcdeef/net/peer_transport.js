@@ -1,5 +1,5 @@
 // Entry point: builds the shared-world transport the game talks to (hub), and the
-// page's own world-wide feature on top of it: the player census.
+// page's own world-wide features on top of it: the player census and the castle gate.
 //   ?net=local    tabs of this browser (BroadcastChannel), for testing without internet
 //   (default)     browsers anywhere (WebRTC through Trystero), no server of ours
 //   ?room=name    which world to join; everyone in the same one shares it
@@ -15,6 +15,7 @@ import { WorldTopology } from './world_topology.js';
 import { mqttBoard, NO_BOARD } from './board.js';
 import { MetaChannel } from './meta_channel.js';
 import { Census } from './census.js';
+import { CastleGate } from './castle_gate.js';
 import { worldName } from './world_epoch.js';
 import { PeerHub } from './peer_hub.js';
 
@@ -35,9 +36,11 @@ export async function startPeerTransport(params = new URLSearchParams(location.s
     settleMs: local ? SETTLE_MS.local : SETTLE_MS.trystero,
     board,
   });
-  // the hub is what pages hand the game; the census rides on it, so a page cached
-  // from before it existed still gets a working hub
+  // the hub is what pages hand the game; the census and castle gate ride on it, so a
+  // page cached from before they existed still gets a working hub
+  const meta = new MetaChannel(topology);
   const hub = new PeerHub(topology);
-  hub.census = new Census(topology, new MetaChannel(topology));
+  hub.census = new Census(topology, meta);
+  hub.castle = new CastleGate(topology, meta);
   return hub;
 }

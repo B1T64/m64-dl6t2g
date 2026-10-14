@@ -11,9 +11,9 @@ import { RoomBase } from './rooms.js';
 import { every } from './ticker.js';
 
 const DEFAULTS = {
-  lonelyRefreshMs: 15000,
-  lonelyRefreshMaxMs: 120000,
-  lonelyCheckMs: 5000,
+  lonelyRefreshMs: 8000,     // a bad start shouldn't cost a minute alone...
+  lonelyRefreshMaxMs: 30000, // ...and only lonely rooms re-announce, so relays barely notice
+  lonelyCheckMs: 4000,
 };
 
 class MultiRoom extends RoomBase {

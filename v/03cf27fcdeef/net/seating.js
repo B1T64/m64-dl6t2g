@@ -26,6 +26,12 @@ export function roleIn(room) {
 // seats, picked at random in proportion to them, so a crowd reading the same snapshot
 // spreads out instead of piling into one room. Fresh shards past the known ones open
 // as needed to seat everyone arriving along with me. Shards in `full` are skipped.
+//
+// Only a real crowd spreads out: "arriving" counts everyone who came lately, including
+// those already seated (and counted in their room), so it overstates. Unless the
+// arrivals overflow the free seats by more than a whole room, the lowest shard with a
+// seat is the pick, which keeps a group of friends together; a room overfilled by a
+// burst sheds its extras (rebalanceSoon) one shard up.
 export function chooseShard({ occupancy, arriving = 0 }, { capacity, maxShards }, full = new Set(), random = Math.random) {
   const known = [...occupancy.keys()];
   const top = known.length ? Math.max(...known) : -1;
@@ -33,6 +39,13 @@ export function chooseShard({ occupancy, arriving = 0 }, { capacity, maxShards }
   let seats = 0;
   const offer = (shard, free) => { if (free > 0 && !full.has(shard)) { open.push([shard, free]); seats += free; } };
   for (let shard = 0; shard <= top && shard < maxShards; shard++) offer(shard, capacity - (occupancy.get(shard) ?? 0));
+
+  const crowd = arriving + 1 - seats > capacity;
+  if (!crowd) {
+    if (open.length) return open[0][0];
+    for (let shard = top + 1; shard < maxShards; shard++) if (!full.has(shard)) return shard;
+    return maxShards - 1;
+  }
   for (let shard = top + 1; seats < arriving + 1 && shard < maxShards; shard++) offer(shard, capacity);
   if (seats === 0) return maxShards - 1;
   let pick = random() * seats;
