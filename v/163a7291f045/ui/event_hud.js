@@ -1,6 +1,6 @@
-// The event's overlay, under the lives counter, clear of the game's HUD: how many
-// players the world has (net/census.js) and, for the host only, the button that
-// opens the castle (net/castle_gate.js). With ?debug=1 it also shows where this page
+// The event's overlay: under the lives counter, how many players the world has
+// (net/census.js); top center, for the host only, the button that opens or closes the
+// castle (net/castle_gate.js). With ?debug=1 it also shows where this page
 // sits in the topology, so a screenshot tells why someone isn't seen.
 
 const REFRESH_MS = 2000;
@@ -10,9 +10,11 @@ const STYLE = `
     pointer-events: none; font: 600 13px system-ui, sans-serif; color: #fff; z-index: 5; }
   #event-hud .count { padding: 4px 10px; border-radius: 12px; background: rgba(0,0,0,.35); white-space: pre; }
   #event-hud .count.debug { font: 11px ui-monospace, monospace; border-radius: 8px; }
-  #event-hud .open-castle { pointer-events: auto; padding: 8px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,.5);
-    background: rgba(160,30,20,.85); color: #fff; font: 700 14px system-ui, sans-serif; cursor: pointer; }
-  #event-hud .open-castle:disabled { opacity: .6; }
+  #castle-control { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 6; padding: 8px 16px;
+    border-radius: 10px; border: 1px solid rgba(255,255,255,.5); background: rgba(160,30,20,.85); color: #fff;
+    font: 700 14px system-ui, sans-serif; cursor: pointer; }
+  #castle-control.close { background: rgba(30,30,40,.85); }
+  #castle-control:disabled { opacity: .6; }
   @media (pointer: coarse) { #event-hud { top: 140px; } }
 `;
 
@@ -42,20 +44,34 @@ function addCounter(root, census, debug) {
   setInterval(refresh, REFRESH_MS);
 }
 
-function addOpenCastleButton(root, castle, hostKey) {
+// The host's castle control, top center: opens the castle, and once open, closes it
+// (which sends everyone back out, so it asks first)
+function addCastleControl(castle, hostKey) {
   const button = document.createElement('button');
-  button.className = 'open-castle';
-  button.textContent = '🏰 Abrir el castillo';
-  root.appendChild(button);
+  button.id = 'castle-control';
+  document.body.appendChild(button);
   button.addEventListener('keydown', e => e.stopPropagation()); // Enter or space here stay out of the game
+  let busy = false;
+  const show = () => {
+    if (busy) return;
+    button.classList.toggle('close', castle.isOpen);
+    button.textContent = castle.isOpen ? '🔒 Cerrar el castillo' : '🏰 Abrir el castillo';
+  };
   button.addEventListener('click', async () => {
+    const closing = castle.isOpen;
+    if (closing && !confirm('¿Cerrar el castillo? Todos vuelven afuera, a los jardines.')) return;
+    busy = true;
     button.disabled = true;
-    button.textContent = 'Abriendo…';
-    const opened = await castle.openAsHost(hostKey).catch(err => { console.warn('could not open the castle:', err); return false; });
-    if (opened) { button.remove(); return; }
+    button.textContent = closing ? 'Cerrando…' : 'Abriendo…';
+    const order = closing ? castle.closeAsHost(hostKey) : castle.openAsHost(hostKey);
+    const done = await order.catch(err => { console.warn('castle order failed:', err); return false; });
+    busy = false;
     button.disabled = false;
-    button.textContent = '🏰 Abrir el castillo (reintentar)';
+    show();
+    if (!done) button.textContent += ' (reintentar)';
   });
+  show();
+  setInterval(show, 1000); // an order from elsewhere (another tab of the host), an opening running out
 }
 
 // census, castle: from startPeerTransport (null when there's no shared world);
@@ -69,5 +85,5 @@ export function startEventHud({ census, castle, hostKey, debug = false }) {
   document.body.appendChild(root);
 
   if (census) addCounter(root, census, debug);
-  if (castle && hostKey && !castle.isOpen) addOpenCastleButton(root, castle, hostKey);
+  if (castle && hostKey) addCastleControl(castle, hostKey);
 }
