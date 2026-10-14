@@ -5,7 +5,8 @@
 // is counted once, though their old room's report is still around. A room whose
 // delegate left stops counting once its report goes stale; my own room counts live.
 // Delegates report every reportMs, and sooner when their room changed (someone came,
-// left, or I moved), so a move shows up everywhere within seconds.
+// left, or I moved), so a move shows up everywhere within seconds. A big room goes
+// out in parts of PART_SIZE ids, each counted as its own entry.
 import { META } from './meta_channel.js';
 import { roster } from './seating.js';
 import { every } from './ticker.js';
@@ -17,8 +18,9 @@ const DEFAULTS = {
   maxRooms: 4096,  // a cap, so a flood of made-up rooms can't grow it forever
 };
 const SHORT_ID = 8;    // enough to tell a few thousand players apart
+const PART_SIZE = 50;  // ids per report message (a meta message carries 512 characters)
 const MAX_MEMBERS = 64;
-const FORMAT = 'v2';   // "v2|<room key>|<id>,<id>,..."; older reports (head counts) are ignored
+const FORMAT = 'v2';   // "v2|<room key>#<part>|<id>,<id>,..."; older reports (head counts) are ignored
 
 const shortId = id => String(id).slice(0, SHORT_ID);
 
@@ -40,7 +42,7 @@ export class Census {
     if (room && this.topology.isDelegate && this.reportText(room) !== this.lastReport) this.report();
   }
 
-  reportText(room) { return `${FORMAT}|${room.key}|${room.members.join(',')}`; }
+  reportText(room) { return `${room.key}|${room.members.join(',')}`; }
 
   myRoom() {
     const { zone } = this.topology;
@@ -50,9 +52,13 @@ export class Census {
   report() {
     const room = this.myRoom();
     if (!room || !this.topology.isDelegate) return;
-    this.note(room.key, room.members);
     this.lastReport = this.reportText(room);
-    this.meta.send(META.CENSUS, this.lastReport);
+    for (let at = 0, part = 0; at < room.members.length; at += PART_SIZE, part++) {
+      const key = `${room.key}#${part}`;
+      const members = room.members.slice(at, at + PART_SIZE);
+      this.note(key, members);
+      this.meta.send(META.CENSUS, `${FORMAT}|${key}|${members.join(',')}`);
+    }
   }
 
   heard(text) {

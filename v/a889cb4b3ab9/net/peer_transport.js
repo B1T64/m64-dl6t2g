@@ -28,6 +28,10 @@ const APP_ID = 'sm64coopdx-web';
 
 // How long a freshly joined room takes to show its members on each network
 const SETTLE_MS = { local: 500, trystero: 4000 };
+// One room per star (level and act), however many go there: everyone at the same
+// star is together and the game draws the nearest ones. Each player links to every
+// roommate, so a very crowded star costs every phone in it.
+const ROOM_CAPACITY = Infinity;
 
 // How far the game draws that peer from my character (src/pc/web/web_puppets.c), -1 if not near
 function gameDistance(handle) {
@@ -45,6 +49,7 @@ export async function startPeerTransport(params = new URLSearchParams(location.s
   const joinRoom = meshNetwork(multiNetwork(networks));
   const topology = new WorldTopology(joinRoom, world, {
     settleMs: local ? SETTLE_MS.local : SETTLE_MS.trystero,
+    capacity: ROOM_CAPACITY,
     board,
   });
   // the hub is what pages hand the game; the census and castle gate ride on it, so a
