@@ -14,6 +14,20 @@ const DEFAULTS = {
   updateMs: 500,
 };
 
+// A function reading how loud `node` is right now, 0..1
+function meterOn(context, node) {
+  const analyser = context.createAnalyser();
+  analyser.fftSize = 256;
+  node.connect(analyser);
+  const samples = new Float32Array(analyser.fftSize);
+  return () => {
+    analyser.getFloatTimeDomainData(samples);
+    let sum = 0;
+    for (const sample of samples) sum += sample * sample;
+    return Math.min(1, Math.sqrt(sum / samples.length) * 4);
+  };
+}
+
 const MIC = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } };
 
 export class VoiceChat {
@@ -25,7 +39,8 @@ export class VoiceChat {
     this.options = { ...DEFAULTS, ...options };
     this.mic = null;
     this.sendingTo = new Set();
-    this.incoming = new Map(); // id -> { element, source, gain }
+    this.incoming = new Map(); // id -> { element, source, gain, meter }
+    this.micMeter = null;
     this.context = null;
 
     topology.onZoneStream = (stream, id) => this.received(stream, id);
@@ -40,6 +55,8 @@ export class VoiceChat {
   async startTalking() {
     if (this.mic) return;
     this.mic = await navigator.mediaDevices.getUserMedia(MIC);
+    this.micSource = this.audio().createMediaStreamSource(this.mic);
+    this.micMeter = meterOn(this.context, this.micSource);
     this.roster.setMine({ talking: true });
     this.update();
   }
@@ -49,7 +66,8 @@ export class VoiceChat {
     this.sendingTo.forEach(id => this.topology.removeZoneStream(this.mic, id));
     this.sendingTo.clear();
     this.mic.getTracks().forEach(track => track.stop());
-    this.mic = null;
+    this.micSource.disconnect();
+    this.mic = this.micSource = this.micMeter = null;
     this.roster.setMine({ talking: false });
   }
 
@@ -106,7 +124,7 @@ export class VoiceChat {
     const gain = context.createGain();
     gain.gain.value = 0;
     source.connect(gain).connect(context.destination);
-    this.incoming.set(id, { element, source, gain });
+    this.incoming.set(id, { element, source, gain, meter: meterOn(context, gain) });
     this.updateVolumes();
   }
 
@@ -118,6 +136,10 @@ export class VoiceChat {
     voice.element.srcObject = null;
     this.incoming.delete(id);
   }
+
+  // How loud (0..1) a roommate sounds to me right now, and my own microphone
+  levelOf(id) { return this.incoming.get(id)?.meter() ?? 0; }
+  myLevel() { return this.micMeter?.() ?? 0; }
 
   volumeFor(id) {
     if (!this.listening || this.isBlocked(id)) return 0;

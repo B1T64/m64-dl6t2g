@@ -1,5 +1,6 @@
 // On-screen controls for phones and tablets: a floating analog stick on the left
-// half of the screen, N64 buttons on the right, and a chat button. Kept small and
+// half of the screen, N64 buttons on the right, pinching on the right half to zoom
+// the camera, and a chat button. Kept small and
 // see-through so the game (and its star counter, top right) stays visible.
 // Pad changes go to the game's touch controller (src/pc/web/web_touch.c) through
 // `sendPad`; chat lines through `sendChat`.
@@ -7,6 +8,13 @@
 const STICK_RANGE = 80;      // N64 stick values reach about ±80
 const STICK_RADIUS_PX = 56;  // finger travel for a full tilt
 const CHAT_MAX = 200;
+// The game reads the pad once per frame (30/s): a quicker tap would go unseen, so
+// every press lasts at least about two frames
+const MIN_PRESS_MS = 70;
+// Pinching: each step of this much finger travel is one C up (spread) or C down
+const PINCH_STEP_PX = 45;
+const C_UP = 0x0008;
+const C_DOWN = 0x0004;
 
 // Keeps a finger's events on the element it pressed, even sliding off it.
 // Best effort: some pointers (e.g. synthetic ones) can't be captured.
@@ -34,6 +42,7 @@ const BUTTONS = [
 const STYLE = `
   #touch { position: fixed; inset: 0; pointer-events: none; touch-action: none; user-select: none; -webkit-user-select: none; }
   #touch .stick-zone { position: absolute; left: 0; top: 0; width: 50%; height: 100%; pointer-events: auto; }
+  #touch .camera-zone { position: absolute; right: 0; top: 0; width: 50%; height: 100%; pointer-events: auto; }
   #touch .base, #touch .knob { position: absolute; border-radius: 50%; transform: translate(-50%, -50%); display: none; }
   #touch .base { width: ${STICK_RADIUS_PX * 2}px; height: ${STICK_RADIUS_PX * 2}px; background: rgba(255,255,255,.08); border: 2px solid rgba(255,255,255,.25); }
   #touch .knob { width: 48px; height: 48px; background: rgba(255,255,255,.35); }
@@ -75,19 +84,22 @@ export function startTouchControls(sendPad, sendChat) {
 
   const root = document.createElement('div');
   root.id = 'touch';
-  root.innerHTML = '<div class="stick-zone"></div><div class="base"></div><div class="knob"></div>';
+  root.innerHTML = '<div class="stick-zone"></div><div class="camera-zone"></div><div class="base"></div><div class="knob"></div>';
   document.body.appendChild(root);
 
   const state = { x: 0, y: 0, buttons: 0 };
   const push = () => sendPad(state.x, state.y, 0, 0, state.buttons);
 
+  const setButton = (mask, pressed) => {
+    state.buttons = pressed ? state.buttons | mask : state.buttons & ~mask;
+    push();
+  };
   attachStick(root, (x, y) => { state.x = x; state.y = y; push(); });
-  for (const button of BUTTONS) {
-    attachButton(root, button, pressed => {
-      state.buttons = pressed ? state.buttons | button.mask : state.buttons & ~button.mask;
-      push();
-    });
-  }
+  for (const button of BUTTONS) attachButton(root, button, pressed => setButton(button.mask, pressed));
+  attachPinchZoom(root.querySelector('.camera-zone'), mask => {
+    setButton(mask, true);
+    setTimeout(() => setButton(mask, false), MIN_PRESS_MS * 1.5);
+  });
   attachChat(root, sendChat);
 }
 
@@ -144,14 +156,56 @@ function makeButton(root, label, className) {
 
 function attachButton(root, { label, className }, onChange) {
   const button = makeButton(root, label, className);
-  const set = pressed => e => {
+  let pressedAt = 0;
+  let releaseLater = null;
+  const press = e => {
     e.preventDefault();
-    button.classList.toggle('down', pressed);
-    onChange(pressed);
+    clearTimeout(releaseLater);
+    pressedAt = performance.now();
+    button.classList.add('down');
+    onChange(true);
+    capture(button, e.pointerId);
   };
-  button.addEventListener('pointerdown', e => { set(true)(e); capture(button, e.pointerId); });
-  button.addEventListener('pointerup', set(false));
-  button.addEventListener('pointercancel', set(false));
+  const release = e => {
+    e.preventDefault();
+    button.classList.remove('down');
+    const wait = pressedAt + MIN_PRESS_MS - performance.now();
+    if (wait > 0) releaseLater = setTimeout(() => onChange(false), wait);
+    else onChange(false);
+  };
+  button.addEventListener('pointerdown', press);
+  button.addEventListener('pointerup', release);
+  button.addEventListener('pointercancel', release);
+}
+
+// Two fingers on the right half: spreading them zooms in (C up), pinching zooms out (C down)
+function attachPinchZoom(zone, pulse) {
+  const fingers = new Map(); // pointer id -> { x, y }
+  let lastSpan = null;
+  const span = () => {
+    const [a, b] = [...fingers.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  };
+  zone.addEventListener('pointerdown', e => {
+    fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    capture(zone, e.pointerId);
+    lastSpan = fingers.size === 2 ? span() : null;
+  });
+  zone.addEventListener('pointermove', e => {
+    if (!fingers.has(e.pointerId)) return;
+    fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (fingers.size !== 2 || lastSpan === null) return;
+    const change = span() - lastSpan;
+    if (Math.abs(change) < PINCH_STEP_PX) return;
+    pulse(change > 0 ? C_UP : C_DOWN);
+    lastSpan = span();
+  });
+  const lift = e => {
+    fingers.delete(e.pointerId);
+    lastSpan = null;
+  };
+  zone.addEventListener('pointerup', lift);
+  zone.addEventListener('pointercancel', lift);
 }
 
 // A chat line typed with the phone's keyboard. Keys typed here stay out of the game.
@@ -164,6 +218,10 @@ function attachChat(root, sendChat) {
   const input = form.querySelector('input');
 
   const close = () => { form.classList.remove('open'); input.blur(); };
+  // The keyboard may pan what's visible (iOS): keep the box at the top of what's shown
+  const follow = () => { form.style.top = `${(globalThis.visualViewport?.offsetTop ?? 0) + 10}px`; };
+  globalThis.visualViewport?.addEventListener('resize', follow);
+  globalThis.visualViewport?.addEventListener('scroll', follow);
   // a click (not pointerdown) so phones accept focusing the field and show the keyboard
   makeButton(root, '💬', 'chat-open').addEventListener('click', () => {
     form.classList.add('open');

@@ -2,6 +2,7 @@
 // (net/census.js); top center, for the host only, the button that opens or closes the
 // castle (net/castle_gate.js). With ?debug=1 it also shows where this page
 // sits in the topology, so a screenshot tells why someone isn't seen.
+import { ask } from './dialog.js';
 
 const REFRESH_MS = 2000;
 
@@ -57,18 +58,21 @@ function addCastleControl(castle, hostKey) {
     button.classList.toggle('close', castle.isOpen);
     button.textContent = castle.isOpen ? '🔒 Cerrar el castillo' : '🏰 Abrir el castillo';
   };
-  button.addEventListener('click', async () => {
-    const closing = castle.isOpen;
-    if (closing && !confirm('¿Cerrar el castillo? Todos vuelven afuera, a los jardines.')) return;
+  const order = async closing => {
     busy = true;
     button.disabled = true;
     button.textContent = closing ? 'Cerrando…' : 'Abriendo…';
-    const order = closing ? castle.closeAsHost(hostKey) : castle.openAsHost(hostKey);
-    const done = await order.catch(err => { console.warn('castle order failed:', err); return false; });
+    const request = closing ? castle.closeAsHost(hostKey) : castle.openAsHost(hostKey);
+    const done = await request.catch(err => { console.warn('castle order failed:', err); return false; });
     busy = false;
     button.disabled = false;
     show();
     if (!done) button.textContent += ' (reintentar)';
+  };
+  // closing sends everyone out, so it asks first (in the page: a browser dialog would freeze the music)
+  button.addEventListener('click', () => {
+    if (!castle.isOpen) { order(false); return; }
+    ask('¿Cerrar el castillo? Todos vuelven afuera, a los jardines.', 'Cerrar el castillo', () => order(true));
   });
   show();
   setInterval(show, 1000); // an order from elsewhere (another tab of the host), an opening running out
