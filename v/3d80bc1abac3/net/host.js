@@ -1,8 +1,8 @@
 // The event's host: whoever enters the host code as their name in the start menu.
 // The code isn't in this site (the repository is public): only the public key of a
 // signing key derived from it is. The host's page signs its orders ("open the castle",
-// "close the castle") and announcements with that key, and every page checks the
-// signature, so no one without the code can give them, however they change their page.
+// "close the castle") with that key, and every page checks the signature, so no one
+// without the code can give them, however they change their page.
 // New code: ~/sm64web/loadtest/host_key.mjs.
 import { loadVendor } from './vendor/vendor.js';
 
@@ -74,25 +74,6 @@ async function verifyHost(signature, message) {
   } catch {
     return false;
   }
-}
-
-// Announcements: "<at>.<signature>.<text>", shown to everyone in `world`
-export const MAX_ANNOUNCEMENT = 140;
-const announcementMessage = (world, at, text) => encoder.encode(`sm64web:announce:${world}:${at}:${text}`);
-
-export async function signAnnouncement(world, text, hostKey) {
-  const at = Date.now();
-  const words = text.trim().slice(0, MAX_ANNOUNCEMENT);
-  return `${at}.${await signHost(announcementMessage(world, at, words), hostKey)}.${words}`;
-}
-
-// { at, text } if the announcement is the host's, else null
-export async function verifyAnnouncement(world, signed) {
-  const [atText, signature] = String(signed).split('.', 2);
-  const text = String(signed).slice(`${atText}.${signature}.`.length);
-  const at = Number(atText);
-  if (!Number.isSafeInteger(at) || at > Date.now() + CLOCK_SKEW_MS || !text || text.length > MAX_ANNOUNCEMENT) return null;
-  return await verifyHost(signature, announcementMessage(world, at, text)) ? { at, text } : null;
 }
 
 // Whether that order leaves the castle open now: an opening runs out after some hours
