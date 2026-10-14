@@ -5,7 +5,7 @@
 // older epoch never meet the new world to hand the old progress back. The host's
 // castle orders are signed per world name, so they're reset too.
 
-export const WORLD_EPOCH = 3;
+export const WORLD_EPOCH = 4;
 
 const STORE_KEY = 'sm64web.epoch';
 
