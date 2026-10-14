@@ -9,6 +9,8 @@
 //   board.read(base)    -> Promise<{ occupancy: Map<shard, members>, arriving }>
 //   board.post(base, shard, members) a room leader's head count
 //   board.arrive(base)               "I'm about to pick a shard of base"
+//   board.readNote(base) -> Promise<string | null>   one short text kept for base...
+//   board.postNote(base, text, ttlS)                 ...until ttlS after its last post
 //
 // mqttBoard keeps it as retained messages on public MQTT brokers (the kind Trystero
 // already signals through; no server of ours). Entries expire on the broker (MQTT 5)
@@ -31,12 +33,15 @@ export const NO_BOARD = Object.freeze({
   read: async () => ({ occupancy: new Map(), arriving: 0 }),
   post() {},
   arrive() {},
+  readNote: async () => null,
+  postNote() {},
 });
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const safeTopic = text => text.replace(/[^\w:.-]/g, '_');
 
-// Entries: <namespace>/<base>/s/<shard> = { n, t }, <namespace>/<base>/a/<token> = { t }
+// Entries: <namespace>/<base>/s/<shard> = { n, t }, <namespace>/<base>/a/<token> = { t },
+// <namespace>/<base>/note = { text, t }
 export class MqttBoard {
   constructor(clients, namespace, options = {}) {
     this.clients = clients;
@@ -68,6 +73,15 @@ export class MqttBoard {
     this.publish(this.topic(base, 'a', token), {}, this.options.arrivalTtlS);
   }
 
+  postNote(base, text, ttlS) {
+    this.publish(this.topic(base, 'note'), { text }, ttlS);
+  }
+
+  async readNote(base) {
+    const entry = (await this.readEntries(base)).get('note');
+    return typeof entry?.text === 'string' ? entry.text : null;
+  }
+
   heard(topic, payload) {
     let entry;
     try { entry = JSON.parse(payload.toString()); } catch { return; }
@@ -75,8 +89,12 @@ export class MqttBoard {
     for (const reader of this.readers) if (topic.startsWith(reader.prefix)) reader.take(topic.slice(reader.prefix.length), entry);
   }
 
-  // Every broker's retained entries, the freshest one winning per topic
   async read(base) {
+    return this.snapshot(await this.readEntries(base));
+  }
+
+  // Every broker's retained entries under base (relative topic -> entry), the freshest winning
+  async readEntries(base) {
     const prefix = this.topic(base, '');
     const latest = new Map(); // relative topic -> entry
     const reader = { prefix, take: (rest, entry) => { if (!(latest.get(rest)?.t >= entry.t)) latest.set(rest, entry); } };
@@ -86,7 +104,7 @@ export class MqttBoard {
     await sleep(this.options.readMs);
     live.forEach(client => client.unsubscribe(`${prefix}#`));
     this.readers.delete(reader);
-    return this.snapshot(latest);
+    return latest;
   }
 
   // Clocks differ between players, so ages are judged generously; the broker's own expiry does the rest

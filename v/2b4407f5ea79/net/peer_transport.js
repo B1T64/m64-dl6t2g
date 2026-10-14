@@ -1,6 +1,7 @@
 // Entry point: builds the shared-world transport the game talks to (hub), and the
 // page's own features on top of it: the player census, the castle gate, who's in my
-// room (names, blocking) and proximity voice chat.
+// room (names, blocking), proximity voice chat, and the world's life (starting over
+// once everyone left).
 //   ?net=local    tabs of this browser (BroadcastChannel), for testing without internet
 //   (default)     browsers anywhere (WebRTC through Trystero), no server of ours
 //   ?room=name    which world to join; everyone in the same one shares it
@@ -19,6 +20,7 @@ import { Census } from './census.js';
 import { CastleGate } from './castle_gate.js';
 import { RoomRoster } from './roster.js';
 import { VoiceChat } from './voice.js';
+import { WorldLife } from './world_life.js';
 import { worldName } from './world_epoch.js';
 import { PeerHub } from './peer_hub.js';
 
@@ -51,6 +53,7 @@ export async function startPeerTransport(params = new URLSearchParams(location.s
   const hub = new PeerHub(topology);
   hub.census = new Census(topology, meta);
   hub.castle = new CastleGate(topology, meta);
+  hub.life = new WorldLife(topology, meta, board);
   hub.roster = new RoomRoster(topology, meta);
   hub.voice = new VoiceChat(topology, hub.roster, {
     distanceOf: id => gameDistance(hub.handleOf(id)),
