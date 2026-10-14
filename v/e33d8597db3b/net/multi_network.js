@@ -28,6 +28,7 @@ class MultiRoom extends RoomBase {
       room.onPeerJoin = id => this.reached(id, room);
       room.onPeerLeave = id => this.lost(id, room);
       room.onMessage = (bytes, from) => this.onMessage(bytes, from);
+      room.onPeerStream = (stream, from) => this.onPeerStream(stream, from);
       room.peers().forEach(id => this.reached(id, room));
     }
     this.stopChecks = every(options.lonelyCheckMs, () => this.refreshIfLonely());
@@ -70,6 +71,10 @@ class MultiRoom extends RoomBase {
     if (to !== undefined) { this.route(to)?.send(bytes, to); return; }
     for (const id of this.routes.keys()) this.route(id).send(bytes, id);
   }
+
+  // media takes the peer's route too: one connection carries it
+  addStream(stream, to) { this.route(to)?.addStream(stream, to); }
+  removeStream(stream, to) { this.routes.get(to)?.forEach(room => room.removeStream(stream, to)); }
 
   leave() {
     this.stopChecks();

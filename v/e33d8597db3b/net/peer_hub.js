@@ -1,6 +1,8 @@
 // What the game sees of the network (Module.webTransport, used by web_transport_lib.js):
 // numeric peer handles instead of ids, and a queue it drains once per tick.
 // Senders that flood are throttled here, per original sender (see rate_limit.js).
+// Players I block vanish from my game: no puppet, no chat, nothing they send reaches
+// it (their world-wide progress still counts, like anyone's).
 import { RateLimiter } from './rate_limit.js';
 
 export const EVENT = { PEER_JOINED: 1, PEER_LEFT: 2, MESSAGE: 3 }; // mirrors WebTransportEventType
@@ -15,12 +17,13 @@ export class PeerHub {
     this.idByHandle = new Map();
     this.nextHandle = RELAYED_PEER + 1;
     this.limiter = new RateLimiter();
+    this.blocked = new Set();
 
-    topology.onPeerJoined = id => this.push({ type: EVENT.PEER_JOINED, peer: this.handleFor(id) });
+    topology.onPeerJoined = id => this.peerJoined(id);
     topology.onPeerLeft = id => this.peerLeft(id);
-    topology.onZoneMessage = (data, id) => this.message(data, id, () => this.handleFor(id));
+    topology.onZoneMessage = (data, id) => { if (!this.blocked.has(id)) this.message(data, id, () => this.handleFor(id)); };
     // relayed messages name a peer only when it's one the game can see (in my zone room)
-    topology.onLevelMessage = (data, origin) => this.message(data, origin, () => this.visibleHandle(origin));
+    topology.onLevelMessage = (data, origin) => { if (!this.blocked.has(origin)) this.message(data, origin, () => this.visibleHandle(origin)); };
     topology.onWorldMessage = (data, origin) => this.message(data, origin, () => RELAYED_PEER);
   }
 
@@ -33,6 +36,24 @@ export class PeerHub {
     }
     return handle;
   }
+
+  peerJoined(id) {
+    if (!this.blocked.has(id)) this.push({ type: EVENT.PEER_JOINED, peer: this.handleFor(id) });
+  }
+
+  isBlocked(id) { return this.blocked.has(id); }
+
+  block(id) {
+    this.blocked.add(id);
+    this.peerLeft(id);
+  }
+
+  unblock(id) {
+    if (this.blocked.delete(id) && this.topology.isZonePeer(id)) this.peerJoined(id);
+  }
+
+  // The game's handle for a roommate it draws, if any (voice.js asks how far they are)
+  handleOf(id) { return this.handleById.get(id); }
 
   visibleHandle(id) {
     return this.topology.isZonePeer(id) ? this.handleFor(id) : RELAYED_PEER;

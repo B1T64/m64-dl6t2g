@@ -8,6 +8,10 @@
 //   room.onPeerJoin  = id => {}
 //   room.onPeerLeave = id => {}
 //   room.onMessage   = (bytes, fromId) => {}
+// and, on networks that carry media (Trystero), voice:
+//   room.addStream(stream, id)       start sending a stream to one member
+//   room.removeStream(stream, id)
+//   room.onPeerStream = (stream, fromId) => {}
 //
 // A network is a factory: joinRoom(name) -> room. Implementations:
 //   local.js     BroadcastChannel between tabs of one browser (testing)
@@ -19,7 +23,11 @@ export class RoomBase {
     this.onPeerJoin = () => {};
     this.onPeerLeave = () => {};
     this.onMessage = () => {};
+    this.onPeerStream = () => {};
   }
+
+  addStream() {}    // no media on this network
+  removeStream() {}
 }
 
 // Wraps a room constructor into a network that leaves every open room when the page goes away.

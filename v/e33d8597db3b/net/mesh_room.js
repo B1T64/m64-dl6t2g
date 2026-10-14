@@ -69,6 +69,7 @@ class MeshRoom extends RoomBase {
     raw.onPeerJoin = id => this.directJoined(id);
     raw.onPeerLeave = id => this.directLeft(id);
     raw.onMessage = (bytes, from) => this.receive(bytes, from);
+    raw.onPeerStream = (stream, from) => this.onPeerStream(stream, from);
     this.stopTicks = every(options.rosterMs, () => this.tick());
   }
 
@@ -86,6 +87,10 @@ class MeshRoom extends RoomBase {
       this.raw.send(frame(FRAME.DATA, [], payload), to);
     }
   }
+
+  // media only over direct links: a roommate relays messages, not voice
+  addStream(stream, to) { if (this.isDirect(to)) this.raw.addStream(stream, to); }
+  removeStream(stream, to) { this.raw.removeStream(stream, to); }
 
   leave() {
     this.stopTicks();

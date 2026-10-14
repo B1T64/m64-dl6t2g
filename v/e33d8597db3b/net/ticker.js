@@ -1,4 +1,4 @@
-// Repeating timers that keep their pace in hidden tabs.
+// Timers that keep their pace in hidden tabs.
 // Browsers throttle a hidden page's own timers down to once a minute, which would
 // stall discovery and heartbeats; a worker's timers aren't throttled that way and
 // its messages still wake the page. Without workers (e.g. Node tests) it falls
@@ -40,4 +40,10 @@ export function every(ms, fn) {
   callbacks.set(id, fn);
   w.postMessage({ id, ms });
   return () => { callbacks.delete(id); w.postMessage({ id, ms: 0 }); };
+}
+
+// Calls fn once after `ms`; returns a function that cancels it
+export function after(ms, fn) {
+  const stop = every(ms, () => { stop(); fn(); });
+  return stop;
 }

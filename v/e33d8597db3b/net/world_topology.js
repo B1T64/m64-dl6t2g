@@ -42,6 +42,9 @@ const DEFAULTS = {
   directoryMs: 3000,   // how often delegates publish their room's occupancy
 };
 
+// A room whose occupancy hasn't been posted for this many rounds is taken as empty
+const SPOKESMAN_FRESH_DIRECTORIES = 3;
+
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 export class WorldTopology {
@@ -52,10 +55,12 @@ export class WorldTopology {
     this.delivered = new RecentIds(); // relayed messages handed to the game (or the directory)
     this.relayed = new RecentIds();   // ...and those I passed on
     this.exposed = new Set();
-    this.peerJoinListeners = new Set(); // besides onPeerJoined: page features (castle_gate.js)
+    this.peerJoinListeners = new Set();  // besides onPeerJoined/onPeerLeft: page features
+    this.peerLeaveListeners = new Set(); // (castle_gate.js, roster.js, voice.js)
 
     this.zone = null;           // { name, shard, room }
     this.directory = new Map(); // shard -> members, as last published in my level tree
+    this.directoryHeard = new Map(); // shard -> when its occupancy was last heard
     this.directoryRead = Promise.resolve();
     this.trustDirectory = false;
     this.role = ROLE.MEMBER;    // in my zone room
@@ -71,6 +76,7 @@ export class WorldTopology {
     this.onLevelMessage = () => {};  // (payload, originId)
     this.onWorldMessage = () => {};  // (payload, originId)
     this.onMetaMessage = () => {};   // (payload, originId): world- or room-wide news for the page (meta_channel.js)
+    this.onZoneStream = () => {};    // (stream, fromId): a roommate's voice (voice.js)
 
     this.stopDirectory = every(this.options.directoryMs, () => this.publishOccupancy());
   }
@@ -83,6 +89,7 @@ export class WorldTopology {
   setZone(name) {
     if (this.zone?.name === name) return;
     const version = ++this.zoneVersion;
+    this.clearDirectory();
     this.leaveZone();
     if (this.board.ready) { this.enterFromBoard(name, version); return; }
     this.directoryRead = this.readDirectory(name, version);
@@ -111,6 +118,10 @@ export class WorldTopology {
   sendLevel(payload) { this.sendRelayed(KIND.LEVEL, payload); }
   sendWorld(payload) { this.sendRelayed(KIND.WORLD, payload); }
   sendMeta(payload) { this.sendRelayed(KIND.META, payload); }
+  // Voice goes to roommates only
+  addZoneStream(stream, id) { if (this.zone && this.exposed.has(id)) this.zone.room.addStream(stream, id); }
+  removeZoneStream(stream, id) { this.zone?.room.removeStream(stream, id); }
+
   sendMetaTo(id, payload) {
     if (this.zone && this.exposed.has(id)) this.zone.room.send(sealZone(payload, KIND.META_ZONE), id);
   }
@@ -120,8 +131,14 @@ export class WorldTopology {
   get isDelegate() { return this.role === ROLE.DELEGATE; }
   get isDeputy() { return this.role === ROLE.DEPUTY; }
   // One room per level answers questions sent to the whole level, so a crowded level
-  // replies once instead of once per room
-  get isLevelSpokesman() { return this.isDelegate && this.zone?.shard === 0; }
+  // replies once instead of once per room: the lowest room with people in it, as the
+  // level tree shows. If shard 0 empties, the next room up takes over.
+  get isLevelSpokesman() {
+    if (!this.isDelegate) return false;
+    const freshSince = Date.now() - SPOKESMAN_FRESH_DIRECTORIES * this.options.directoryMs;
+    return ![...this.directory].some(([shard, members]) =>
+      shard < this.zone.shard && members > 0 && (this.directoryHeard.get(shard) ?? 0) >= freshSince);
+  }
   isZonePeer(id) { return this.exposed.has(id); }
   get connectionCount() {
     return (this.zone ? this.zone.room.peers().length : 0)
@@ -138,12 +155,22 @@ export class WorldTopology {
   // already; anyone else listens in on its first shard for a moment. An empty map
   // means nobody is there yet.
   async readDirectory(name, version) {
-    this.directory = new Map();
+    this.clearDirectory();
     const observer = this.levelTree ? null : this.joinRoom(`${this.levelTreeBase(name)}:0`);
     if (observer) observer.onMessage = bytes => this.receive(observer, bytes);
     await sleep(this.options.settleMs);
     observer?.leave();
     return version === this.zoneVersion ? this.directory : new Map();
+  }
+
+  clearDirectory() {
+    this.directory = new Map();
+    this.directoryHeard = new Map();
+  }
+
+  heardOccupancy(shard, members) {
+    this.directory.set(shard, members);
+    this.directoryHeard.set(shard, Date.now());
   }
 
   // The lowest shard with a free seat, else a fresh one past the known ones
@@ -161,6 +188,7 @@ export class WorldTopology {
     room.onPeerJoin = id => { this.expose(id); this.zoneMembershipChanged(version); };
     room.onPeerLeave = id => { this.hide(id); this.zoneMembershipChanged(version); };
     room.onMessage = (bytes, from) => this.receive(room, bytes, from);
+    room.onPeerStream = (stream, from) => { if (this.exposed.has(from)) this.onZoneStream(stream, from); };
     room.peers().forEach(id => this.expose(id));
     this.zoneMembershipChanged(version);
   }
@@ -175,6 +203,7 @@ export class WorldTopology {
   }
 
   addPeerJoinListener(listener) { this.peerJoinListeners.add(listener); }
+  addPeerLeaveListener(listener) { this.peerLeaveListeners.add(listener); }
 
   expose(id) {
     if (this.exposed.has(id)) return;
@@ -184,7 +213,9 @@ export class WorldTopology {
   }
 
   hide(id) {
-    if (this.exposed.delete(id)) this.onPeerLeft(id);
+    if (!this.exposed.delete(id)) return;
+    this.onPeerLeft(id);
+    this.peerLeaveListeners.forEach(listener => listener(id));
   }
 
   zoneMembershipChanged(version) {
@@ -230,7 +261,7 @@ export class WorldTopology {
     const payload = directoryPayload(this.zone.shard, roster(this.zone.room).length);
     const { bytes, id } = sealRelayed(KIND.DIRECTORY, payload, this.zone.room.selfId);
     this.markOwn(id);
-    this.directory.set(this.zone.shard, roster(this.zone.room).length);
+    this.heardOccupancy(this.zone.shard, roster(this.zone.room).length);
     this.levelTree.links.forEach(link => link.send(bytes));
   }
 
@@ -304,7 +335,7 @@ export class WorldTopology {
   deliver(message) {
     if (message.kind === KIND.DIRECTORY) {
       const entry = readDirectory(message.payload);
-      if (entry) this.directory.set(entry.shard, entry.members);
+      if (entry) this.heardOccupancy(entry.shard, entry.members);
       return;
     }
     const deliver = { [KIND.WORLD]: this.onWorldMessage, [KIND.LEVEL]: this.onLevelMessage, [KIND.META]: this.onMetaMessage }[message.kind];
