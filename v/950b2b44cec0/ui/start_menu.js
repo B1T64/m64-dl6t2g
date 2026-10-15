@@ -1,10 +1,12 @@
-// Start menu: before the game starts, the player picks a name. Character and colors
+// Start menu: before the game starts, the player picks a name, and the high or low
+// end (how many players they see: view_limit.js). Character and colors
 // come next, in the game's player editor, with the player in view (it opens by itself,
 // and later from the pause menu: JUGADOR, or L; see src/pc/web/web_pause.c).
 // The event's host enters the host code as their name (net/host.js): they play as the
 // host's name, and their signing key is kept here so the code never shows again; anyone
 // else picking the host's name gets a fan's name instead.
 import { HOST_NAME, hostKeyFromCode, isHostKey, looksLikeHostCode } from '../net/host.js';
+import { QUALITY, VIEW, savedQuality, saveQuality } from './view_limit.js';
 
 const STORE_KEY = 'sm64web.player';
 const HOST_KEY_STORE = 'sm64web.host';
@@ -15,10 +17,14 @@ const STYLE = `
     font: 15px system-ui, sans-serif; display: flex; justify-content: center; align-items: center; padding: 16px; box-sizing: border-box; }
   #start-menu .card { width: min(100%, 420px); display: flex; flex-direction: column; gap: 16px; }
   #start-menu h1 { margin: 0; font-size: 22px; }
-  #start-menu label.field { display: flex; flex-direction: column; gap: 6px; color: #9a9aa8; font-size: 13px; }
+  #start-menu .field { display: flex; flex-direction: column; gap: 6px; color: #9a9aa8; font-size: 13px; }
   #start-menu input.name { font: 16px system-ui, sans-serif; padding: 10px 12px; border-radius: 8px; border: 1px solid #3a3a48;
     background: #16161e; color: #e8e8ee; }
   #start-menu .hint { color: #9a9aa8; font-size: 13px; line-height: 1.4; }
+  #start-menu .quality { display: flex; gap: 8px; }
+  #start-menu .quality button { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #3a3a48; background: #16161e;
+    color: #e8e8ee; font: 600 14px system-ui, sans-serif; cursor: pointer; }
+  #start-menu .quality button[aria-pressed=true] { border-color: #e4382b; background: #2a1414; }
   #start-menu .play { align-self: flex-start; padding: 12px 28px; border-radius: 10px; border: none;
     background: #e4382b; color: #fff; font: 700 17px system-ui, sans-serif; cursor: pointer; }
 `;
@@ -56,7 +62,7 @@ const isPalette = palette => Array.isArray(palette) && palette.length === 8
 const legacyPick = saved => (saved && !saved.handedOver && Number.isInteger(saved.model) && isPalette(saved.palette)
   ? { model: saved.model, palette: saved.palette } : null);
 
-// Shows the menu; resolves once the player presses Play with { name, hostKey, legacy }
+// Shows the menu; resolves once the player presses Play with { name, hostKey, legacy, quality }
 // hostKey: hex, or null for everyone but the host; legacy: the old menu's pick to hand over once.
 // `defaultName` fills the name field the first time.
 export function chooseName(defaultName) {
@@ -70,10 +76,26 @@ export function chooseName(defaultName) {
     <div class="card">
       <h1>¿Cómo te llamás?</h1>
       <label class="field">Nombre (sin espacios)<input type="text" class="name" maxlength="${NAME_MAX}" autocomplete="nickname"></label>
+      <div class="field">Tu dispositivo
+        <div class="quality"><button type="button" data-quality="${QUALITY.HIGH}">Gama alta</button><button type="button" data-quality="${QUALITY.LOW}">Gama baja</button></div>
+        <div class="hint quality-hint"></div>
+      </div>
       <div class="hint">Después elegís tu personaje y sus colores. Para cambiarlos más tarde: pausa → JUGADOR (o L).</div>
       <button class="play">Jugar</button>
     </div>`;
   document.body.appendChild(root);
+
+  let quality = savedQuality();
+  const HINTS = {
+    [QUALITY.HIGH]: `Ves hasta ${VIEW.high + 1} jugadores a la vez (con vos).`,
+    [QUALITY.LOW]: `Ves hasta ${VIEW.low + 1} jugadores a la vez (con vos): más liviano para celulares.`,
+  };
+  const showQuality = () => {
+    root.querySelectorAll('.quality button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.quality === quality)));
+    root.querySelector('.quality-hint').textContent = HINTS[quality];
+  };
+  root.querySelectorAll('.quality button').forEach(b => b.addEventListener('click', () => { quality = b.dataset.quality; showQuality(); }));
+  showQuality();
 
   const nameInput = root.querySelector('.name');
   nameInput.value = cleanName(saved?.name || defaultName);
@@ -95,10 +117,11 @@ export function chooseName(defaultName) {
       else if (name.toLowerCase() === HOST_NAME.toLowerCase()) name = `Fan_de_${HOST_NAME}`;
       else if (looksLikeHostCode(name)) name = cleanName(defaultName); // a wrong code isn't shown to everyone
       const legacy = legacyPick(saved);
+      saveQuality(quality);
       save({ name, handedOver: true });
       root.remove();
       style.remove();
-      resolve({ name, hostKey, legacy });
+      resolve({ name, hostKey, legacy, quality });
     });
   });
 }

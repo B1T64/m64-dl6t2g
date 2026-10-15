@@ -21,6 +21,7 @@ import { CastleGate } from './castle_gate.js';
 import { RoomRoster } from './roster.js';
 import { VoiceChat } from './voice.js';
 import { WorldLife } from './world_life.js';
+import { HostBeacon } from './host_beacon.js';
 import { worldName } from './world_epoch.js';
 import { PeerHub } from './peer_hub.js';
 
@@ -59,6 +60,8 @@ export async function startPeerTransport(params = new URLSearchParams(location.s
   hub.census = new Census(topology, meta);
   hub.castle = new CastleGate(topology, meta);
   hub.life = new WorldLife(topology, meta, board);
+  hub.hostBeacon = new HostBeacon(topology, meta);
+  hub.hostBeacon.onHost = id => hub.setHost(id);
   hub.roster = new RoomRoster(topology, meta);
   hub.voice = new VoiceChat(topology, hub.roster, {
     distanceOf: id => gameDistance(hub.handleOf(id)),

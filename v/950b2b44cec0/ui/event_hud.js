@@ -1,8 +1,10 @@
 // The event's overlay: under the lives counter, how many players the world has
 // (net/census.js); top center, for the host only, the button that opens or closes the
-// castle (net/castle_gate.js). With ?debug=1 it also shows where this page
+// castle (net/castle_gate.js) and how many players it draws at most (view_limit.js).
+// With ?debug=1 it also shows where this page
 // sits in the topology, so a screenshot tells why someone isn't seen.
 import { ask } from './dialog.js';
+import { VIEW, hostView, saveHostView } from './view_limit.js';
 
 const REFRESH_MS = 2000;
 
@@ -17,6 +19,11 @@ const STYLE = `
   #castle-control.close { background: rgba(30,30,40,.85); }
   #castle-control:disabled { opacity: .6; }
   @media (pointer: coarse) { #event-hud { top: 140px; } }
+  #host-view { position: fixed; top: 8px; left: calc(50% + 120px); z-index: 6; display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px; border-radius: 10px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.35);
+    color: #fff; font: 600 13px system-ui, sans-serif; }
+  #host-view input { width: 52px; font: 600 13px system-ui, sans-serif; padding: 2px 4px; border-radius: 6px;
+    border: 1px solid rgba(255,255,255,.4); background: rgba(0,0,0,.4); color: #fff; }
 `;
 
 const ROLE_NAMES = { delegate: 'delegado', deputy: 'suplente', member: 'miembro' }; // net/seating.js ROLE
@@ -80,7 +87,23 @@ function addCastleControl(castle, hostKey) {
 
 // census, castle: from startPeerTransport (null when there's no shared world);
 // hostKey: the host's signing key, null for everyone else
-export function startEventHud({ census, castle, hostKey, debug = false }) {
+// The host's own limit on how many players it draws (everyone in its level by default)
+function addHostViewControl(onHostView) {
+  const control = document.createElement('label');
+  control.id = 'host-view';
+  control.innerHTML = `👁 Ves hasta <input type="number" min="1" max="${VIEW.hostMax}" step="1"> jugadores`;
+  const input = control.querySelector('input');
+  input.value = hostView();
+  input.addEventListener('keydown', e => e.stopPropagation()); // typing here stays out of the game
+  input.addEventListener('keyup', e => e.stopPropagation());
+  input.addEventListener('change', () => {
+    input.value = saveHostView(Number(input.value));
+    onHostView(Number(input.value));
+  });
+  document.body.appendChild(control);
+}
+
+export function startEventHud({ census, castle, hostKey, onHostView, debug = false }) {
   const style = document.createElement('style');
   style.textContent = STYLE;
   document.head.appendChild(style);
@@ -90,4 +113,5 @@ export function startEventHud({ census, castle, hostKey, debug = false }) {
 
   if (census) addCounter(root, census, debug);
   if (castle && hostKey) addCastleControl(castle, hostKey);
+  if (hostKey && onHostView) addHostViewControl(onHostView);
 }

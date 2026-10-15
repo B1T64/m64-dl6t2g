@@ -1,8 +1,8 @@
 // News for the page rather than the game, over the topology's META messages:
 // world-wide (send) or to one roommate (sendTo). Each carries a type and a short
-// text; one handler per type (census.js, castle_gate.js, roster.js, world_life.js).
+// text; one handler per type (census.js, castle_gate.js, roster.js, world_life.js, host_beacon.js).
 
-export const META = { CENSUS: 1, CASTLE: 2, ROSTER: 3, LIFE: 5 }; // 4 was announcements (gone)
+export const META = { CENSUS: 1, CASTLE: 2, ROSTER: 3, LIFE: 5, HOST: 6 }; // 4 was announcements (gone)
 
 const MAX_TEXT = 512;
 const encoder = new TextEncoder();

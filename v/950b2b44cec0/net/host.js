@@ -76,5 +76,21 @@ async function verifyHost(signature, message) {
   }
 }
 
+// "I, <id>, am the host here": "<at>.<signature>", fresh for a few minutes
+const HOST_PRESENCE_FRESH_MS = 5 * 60 * 1000;
+const hostPresenceMessage = (world, id, at) => encoder.encode(`sm64web:host-presence:${world}:${id}:${at}`);
+
+export async function signHostPresence(world, id, hostKey) {
+  const at = Date.now();
+  return `${at}.${await signHost(hostPresenceMessage(world, id, at), hostKey)}`;
+}
+
+export async function verifyHostPresence(world, id, signed) {
+  const [atText, signature] = String(signed).split('.');
+  const at = Number(atText);
+  if (!Number.isSafeInteger(at) || Math.abs(Date.now() - at) > HOST_PRESENCE_FRESH_MS) return false;
+  return verifyHost(signature, hostPresenceMessage(world, id, at));
+}
+
 // Whether that order leaves the castle open now: an opening runs out after some hours
 export const castleOpenBy = order => order?.action === CASTLE.OPEN && Date.now() < order.at + OPEN_CASTLE_MS;

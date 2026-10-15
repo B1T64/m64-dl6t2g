@@ -18,6 +18,8 @@ export class PeerHub {
     this.nextHandle = RELAYED_PEER + 1;
     this.limiter = new RateLimiter();
     this.blocked = new Set();
+    this.hostId = null;            // the event's host, once its beacon is heard (host_beacon.js)
+    this.onHostHandle = () => {};  // (handle): the game sends the host full-rate presence
 
     topology.onPeerJoined = id => this.peerJoined(id);
     topology.onPeerLeft = id => this.peerLeft(id);
@@ -38,7 +40,14 @@ export class PeerHub {
   }
 
   peerJoined(id) {
-    if (!this.blocked.has(id)) this.push({ type: EVENT.PEER_JOINED, peer: this.handleFor(id) });
+    if (this.blocked.has(id)) return;
+    this.push({ type: EVENT.PEER_JOINED, peer: this.handleFor(id) });
+    if (id === this.hostId) this.onHostHandle(this.handleFor(id));
+  }
+
+  setHost(id) {
+    this.hostId = id;
+    if (this.topology.isZonePeer(id)) this.onHostHandle(this.handleFor(id));
   }
 
   isBlocked(id) { return this.blocked.has(id); }
