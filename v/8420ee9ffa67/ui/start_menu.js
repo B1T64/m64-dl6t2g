@@ -1,6 +1,6 @@
 // Start menu: before the game starts, the player picks a name. Character and colors
-// are edited in the game, with the player in view (pause menu: PLAYER, or L; see
-// src/pc/web/web_pause.c), and the game's config keeps them.
+// come next, in the game's player editor, with the player in view (it opens by itself,
+// and later from the pause menu: JUGADOR, or L; see src/pc/web/web_pause.c).
 // The event's host enters the host code as their name (net/host.js): they play as the
 // host's name, and their signing key is kept here so the code never shows again; anyone
 // else picking the host's name gets a fan's name instead.
@@ -56,10 +56,8 @@ const isPalette = palette => Array.isArray(palette) && palette.length === 8
 const legacyPick = saved => (saved && !saved.handedOver && Number.isInteger(saved.model) && isPalette(saved.palette)
   ? { model: saved.model, palette: saved.palette } : null);
 
-// Shows the menu; resolves once the player presses Play with
-//   { name, hostKey, firstVisit, legacy }
-// hostKey: hex, or null for everyone but the host; firstVisit: nothing was ever saved
-// here (the game opens its player editor); legacy: the old menu's pick to hand over once.
+// Shows the menu; resolves once the player presses Play with { name, hostKey, legacy }
+// hostKey: hex, or null for everyone but the host; legacy: the old menu's pick to hand over once.
 // `defaultName` fills the name field the first time.
 export function chooseName(defaultName) {
   const saved = load();
@@ -72,7 +70,7 @@ export function chooseName(defaultName) {
     <div class="card">
       <h1>¿Cómo te llamás?</h1>
       <label class="field">Nombre (sin espacios)<input type="text" class="name" maxlength="${NAME_MAX}" autocomplete="nickname"></label>
-      <div class="hint">Tu personaje y sus colores se eligen dentro del juego: pausa → PLAYER (o L).</div>
+      <div class="hint">Después elegís tu personaje y sus colores. Para cambiarlos más tarde: pausa → JUGADOR (o L).</div>
       <button class="play">Jugar</button>
     </div>`;
   document.body.appendChild(root);
@@ -100,7 +98,7 @@ export function chooseName(defaultName) {
       save({ name, handedOver: true });
       root.remove();
       style.remove();
-      resolve({ name, hostKey, firstVisit: saved === null, legacy });
+      resolve({ name, hostKey, legacy });
     });
   });
 }
