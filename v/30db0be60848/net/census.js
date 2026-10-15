@@ -6,7 +6,8 @@
 // delegate left stops counting once its report goes stale; my own room counts live.
 // Delegates report every reportMs, and sooner when their room changed (someone came,
 // left, or I moved), so a move shows up everywhere within seconds. A big room goes
-// out in parts of PART_SIZE ids, each counted as its own entry.
+// out in parts of PART_SIZE ids, each counted as its own entry; every part says how
+// many there are, so the parts of a room that shrank stop counting at once.
 import { META } from './meta_channel.js';
 import { roster } from './seating.js';
 import { every } from './ticker.js';
@@ -20,7 +21,7 @@ const DEFAULTS = {
 const SHORT_ID = 8;    // enough to tell a few thousand players apart
 const PART_SIZE = 50;  // ids per report message (a meta message carries 512 characters)
 const MAX_MEMBERS = 64;
-const FORMAT = 'v2';   // "v2|<room key>#<part>|<id>,<id>,..."; older reports (head counts) are ignored
+const FORMAT = 'v3';   // "v3|<room key>|<part>/<parts>|<id>,<id>,..."; older reports are ignored
 
 const shortId = id => String(id).slice(0, SHORT_ID);
 
@@ -53,20 +54,30 @@ export class Census {
     const room = this.myRoom();
     if (!room || !this.topology.isDelegate) return;
     this.lastReport = this.reportText(room);
-    for (let at = 0, part = 0; at < room.members.length; at += PART_SIZE, part++) {
-      const key = `${room.key}#${part}`;
-      const members = room.members.slice(at, at + PART_SIZE);
-      this.note(key, members);
-      this.meta.send(META.CENSUS, `${FORMAT}|${key}|${members.join(',')}`);
+    const parts = Math.ceil(room.members.length / PART_SIZE);
+    for (let part = 0; part < parts; part++) {
+      const members = room.members.slice(part * PART_SIZE, (part + 1) * PART_SIZE);
+      this.notePart(room.key, part, parts, members);
+      this.meta.send(META.CENSUS, `${FORMAT}|${room.key}|${part}/${parts}|${members.join(',')}`);
     }
   }
 
   heard(text) {
-    const [format, key, list] = text.split('|');
-    if (format !== FORMAT || !key || !list) return;
+    const [format, key, of, list] = text.split('|');
+    const [part, parts] = String(of).split('/').map(Number);
+    if (format !== FORMAT || !key || !list || !Number.isInteger(part) || !Number.isInteger(parts) || part < 0 || part >= parts) return;
     const members = list.split(',').filter(id => id.length > 0 && id.length <= SHORT_ID);
     if (members.length === 0 || members.length > MAX_MEMBERS) return;
-    this.note(key, members);
+    this.notePart(key, part, parts, members);
+  }
+
+  // A room's part; parts past the count it gives are left over from when the room was bigger
+  notePart(room, part, parts, members) {
+    for (const key of this.rooms.keys()) {
+      const [base, index] = key.split('#');
+      if (base === room && Number(index) >= parts) this.rooms.delete(key);
+    }
+    this.note(`${room}#${part}`, members);
   }
 
   note(key, members) {

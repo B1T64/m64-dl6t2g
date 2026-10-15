@@ -16,9 +16,11 @@ import { every } from './ticker.js';
 const FRAME = { DATA: 0, ROSTER: 1, FORWARD: 2, RELAYED: 3 };
 
 const DEFAULTS = {
-  rosterMs: 2000,  // how often members share who they reach
+  rosterMs: 2000,  // how often members share who they reach...
   graceMs: 6000,   // time a direct connection gets to form before relaying
   staleMs: 7000,   // a roster older than this no longer vouches for anyone
+  rosterGroup: 16, // ...in rooms up to this size; bigger rooms share (and wait) proportionally
+                   // less often, since every roster goes to every member with every id in it
 };
 
 const encoder = new TextEncoder();
@@ -70,8 +72,12 @@ class MeshRoom extends RoomBase {
     raw.onPeerLeave = id => this.directLeft(id);
     raw.onMessage = (bytes, from) => this.receive(bytes, from);
     raw.onPeerStream = (stream, from) => this.onPeerStream(stream, from);
+    this.lastRoster = 0;
     this.stopTicks = every(options.rosterMs, () => this.tick());
   }
+
+  // 1 in rooms up to rosterGroup members, growing with the room
+  get slowdown() { return Math.max(1, Math.ceil(this.raw.peers().length / this.options.rosterGroup)); }
 
   // ---- the room interface -----------------------------------------------------
 
@@ -118,7 +124,7 @@ class MeshRoom extends RoomBase {
   voucherFor(id) {
     const now = Date.now();
     for (const [roommate, heard] of this.vouchers.get(id) ?? []) {
-      if (now - heard <= this.options.staleMs && this.isDirect(roommate)) return roommate;
+      if (now - heard <= this.options.staleMs * this.slowdown && this.isDirect(roommate)) return roommate;
     }
     return null;
   }
@@ -129,7 +135,11 @@ class MeshRoom extends RoomBase {
   }
 
   tick() {
-    this.raw.send(frame(FRAME.ROSTER, this.raw.peers()));
+    const now = Date.now();
+    if (now - this.lastRoster >= this.options.rosterMs * this.slowdown) {
+      this.lastRoster = now;
+      this.raw.send(frame(FRAME.ROSTER, this.raw.peers()));
+    }
     this.updateRelayed();
   }
 
@@ -145,7 +155,7 @@ class MeshRoom extends RoomBase {
         continue;
       }
       const waited = now - (this.firstHeard.get(id) ?? now);
-      if (!this.relayed.has(id) && waited >= this.options.graceMs) {
+      if (!this.relayed.has(id) && waited >= this.options.graceMs * this.slowdown) {
         this.relayed.add(id);
         this.onPeerJoin(id);
       }
