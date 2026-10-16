@@ -41,6 +41,8 @@ const STYLE = `
   #voice .room .title { font: 600 12px system-ui, sans-serif; color: rgba(255,255,255,.6); margin-bottom: 4px; }
   #voice .player { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
   #voice .player .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  #voice .player .status { font: 11px system-ui, sans-serif; color: rgba(255,255,255,.55); white-space: nowrap; }
+  #voice .player .status.audio { color: #6ee08a; }
   #voice .player .mic { color: rgba(255,255,255,.25); display: flex; }
   #voice .player .mic.on { color: rgba(255,255,255,.7); }
   #voice .player .mic.talking { color: #6ee08a; }
@@ -53,6 +55,8 @@ const STYLE = `
 const TALK_QUESTION = '¿Prender tu micrófono? Te van a escuchar los jugadores que estén cerca tuyo en el juego y tengan las voces activadas.';
 const LISTEN_QUESTION = '¿Escuchar el micrófono de otros jugadores? Vas a oír a los que estén cerca tuyo en el juego y tengan el micrófono prendido.';
 const TALKING_LEVEL = 0.08;
+// net/voice.js statusOf, plus 'deaf' while I don't listen
+const STATUS_TEXT = { audio: 'te llega', far: 'lejos', waiting: 'conectando…', off: 'sin mic', deaf: '' };
 
 const element = (tag, className, html = '') => {
   const node = document.createElement(tag);
@@ -79,7 +83,7 @@ function switchRow({ icon, label, question, yes, isOn, turnOn, turnOff, changed 
 
 function playerRow(id, player, { voice, hub }, rerender) {
   const blocked = hub.isBlocked(id);
-  const row = element('div', blocked ? 'player blocked' : 'player', `<span class="mic">${ICONS.mic}</span><span class="name"></span><button></button>`);
+  const row = element('div', blocked ? 'player blocked' : 'player', `<span class="mic">${ICONS.mic}</span><span class="name"></span><span class="status"></span><button></button>`);
   row.dataset.id = id;
   row.querySelector('.mic').classList.toggle('on', player.talking);
   row.querySelector('.name').textContent = player.name || 'Jugador';
@@ -139,6 +143,10 @@ export function startSocialBar({ roster, voice, hub }) {
     if (card.hidden) return;
     for (const row of room.querySelectorAll('.player')) {
       row.querySelector('.mic').classList.toggle('talking', voice.levelOf(row.dataset.id) > TALKING_LEVEL);
+      const status = voice.listening ? voice.statusOf(row.dataset.id) : 'deaf';
+      const label = row.querySelector('.status');
+      label.className = `status ${status}`;
+      label.textContent = STATUS_TEXT[status];
     }
   }, REFRESH_MS);
   showPill();

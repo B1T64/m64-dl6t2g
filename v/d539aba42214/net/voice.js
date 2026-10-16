@@ -7,8 +7,8 @@
 import { every } from './ticker.js';
 
 const DEFAULTS = {
-  hearRange: 3000,      // game units (Mario is about 160 tall)
-  fullVolumeRange: 600,
+  hearRange: 6000,      // game units (Mario is about 160 tall)
+  fullVolumeRange: 1500,
   keepRange: 1.25,      // a listener I already send to keeps it until a bit further: no flapping at the edge
   maxListeners: 6,
   updateMs: 500,
@@ -140,6 +140,17 @@ export class VoiceChat {
   // How loud (0..1) a roommate sounds to me right now, and my own microphone
   levelOf(id) { return this.incoming.get(id)?.meter() ?? 0; }
   myLevel() { return this.micMeter?.() ?? 0; }
+
+  // Where a roommate's voice stands, for the players list:
+  //   off      their microphone is off        far      on, but too far to be heard here
+  //   waiting  on and near, no audio yet      audio    their audio reaches me
+  statusOf(id) {
+    if (this.incoming.has(id) && this.volumeFor(id) > 0) return 'audio';
+    if (!this.roster.players.get(id)?.talking) return 'off';
+    const distance = this.distanceOf(id);
+    if (distance < 0 || distance > this.options.hearRange) return 'far';
+    return 'waiting';
+  }
 
   volumeFor(id) {
     if (!this.listening || this.isBlocked(id)) return 0;
