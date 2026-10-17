@@ -92,5 +92,26 @@ export async function verifyHostPresence(world, id, signed) {
   return verifyHost(signature, hostPresenceMessage(world, id, at));
 }
 
+// "Out with this player": "<at>.<signature>.<peer>|<browser>|<name>"
+const kickMessage = (world, at, who) => encoder.encode(`sm64web:kick:${world}:${at}:${who}`);
+const kickTarget = ({ peer = '', browser = '', name = '' }) => [peer, browser, name].map(s => String(s).replace(/\|/g, '')).join('|');
+
+export async function signKick(world, target, hostKey) {
+  const at = Date.now();
+  const who = kickTarget(target);
+  return `${at}.${await signHost(kickMessage(world, at, who), hostKey)}.${who}`;
+}
+
+// { peer, browser, name } if the kick is the host's, else null
+export async function verifyKick(world, signed) {
+  const [atText, signature] = String(signed).split('.', 2);
+  const who = String(signed).slice(`${atText}.${signature}.`.length);
+  const at = Number(atText);
+  if (!Number.isSafeInteger(at) || at > Date.now() + CLOCK_SKEW_MS || who.split('|').length !== 3) return null;
+  if (!await verifyHost(signature, kickMessage(world, at, who))) return null;
+  const [peer, browser, name] = who.split('|');
+  return { peer, browser, name };
+}
+
 // Whether that order leaves the castle open now: an opening runs out after some hours
 export const castleOpenBy = order => order?.action === CASTLE.OPEN && Date.now() < order.at + OPEN_CASTLE_MS;

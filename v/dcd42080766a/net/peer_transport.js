@@ -22,6 +22,10 @@ import { RoomRoster } from './roster.js';
 import { VoiceChat } from './voice.js';
 import { WorldLife } from './world_life.js';
 import { HostBeacon } from './host_beacon.js';
+import { Kicks } from './kicks.js';
+
+// Thrown when this browser was kicked from this world: it plays alone (shell.html)
+export class KickedError extends Error { constructor() { super('kicked by the host'); this.name = 'KickedError'; } }
 import { worldName } from './world_epoch.js';
 import { PeerHub } from './peer_hub.js';
 
@@ -43,6 +47,7 @@ function gameDistance(handle) {
 export async function startPeerTransport(params = new URLSearchParams(location.search)) {
   const local = params.get('net') === 'local';
   const world = worldName(params.get('room') || 'world');
+  if (Kicks.wasKicked(world)) throw new KickedError();
   const [networks, board] = await Promise.all([
     local ? [localNetwork(APP_ID)] : trysteroNetworks(APP_ID),
     local ? NO_BOARD : mqttBoard(`${APP_ID}/seats`),
@@ -63,6 +68,8 @@ export async function startPeerTransport(params = new URLSearchParams(location.s
   hub.hostBeacon = new HostBeacon(topology, meta);
   hub.hostBeacon.onHost = id => hub.setHost(id);
   hub.roster = new RoomRoster(topology, meta);
+  hub.kicks = new Kicks(topology, meta, hub, hub.roster);
+  hub.kicks.onKicked = () => hub.leaveWorld();
   hub.voice = new VoiceChat(topology, hub.roster, {
     distanceOf: id => gameDistance(hub.handleOf(id)),
     isBlocked: id => hub.isBlocked(id),

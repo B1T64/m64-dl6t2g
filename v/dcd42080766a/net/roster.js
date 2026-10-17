@@ -4,13 +4,25 @@
 import { META } from './meta_channel.js';
 
 const MAX_NAME = 32;
+const BROWSER_ID_LENGTH = 16;
+
+// This browser's lasting id (the host's kicks name it, so a reload doesn't undo a kick)
+function browserId() {
+  try {
+    let id = localStorage.getItem('sm64web.browser');
+    if (!id) { id = Math.random().toString(36).slice(2, 2 + BROWSER_ID_LENGTH); localStorage.setItem('sm64web.browser', id); }
+    return id;
+  } catch {
+    return '';
+  }
+}
 
 export class RoomRoster {
   constructor(topology, meta) {
     this.topology = topology;
     this.meta = meta;
-    this.mine = { name: '', talking: false, listening: false };
-    this.players = new Map(); // id -> { name, talking, listening }
+    this.mine = { name: '', browser: browserId(), talking: false, listening: false };
+    this.players = new Map(); // id -> { name, browser, talking, listening }
     this.listeners = new Set();
 
     meta.on(META.ROSTER, (text, from) => this.heard(text, from));
@@ -36,6 +48,7 @@ export class RoomRoster {
     try { entry = JSON.parse(text); } catch { return; }
     this.players.set(from, {
       name: String(entry?.name ?? '').slice(0, MAX_NAME),
+      browser: String(entry?.browser ?? '').slice(0, BROWSER_ID_LENGTH),
       talking: entry?.talking === true,
       listening: entry?.listening === true,
     });

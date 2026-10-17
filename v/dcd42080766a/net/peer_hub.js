@@ -18,6 +18,8 @@ export class PeerHub {
     this.nextHandle = RELAYED_PEER + 1;
     this.limiter = new RateLimiter();
     this.blocked = new Set();
+    this.banned = new Set();      // kicked by the host (kicks.js): blocked, world news dropped too
+    this.onLeaveWorld = () => {}; // this page was kicked
     this.hostId = null;            // the event's host, once its beacon is heard (host_beacon.js)
     this.onHostHandle = () => {};  // (handle): the game sends the host full-rate presence
 
@@ -26,7 +28,7 @@ export class PeerHub {
     topology.onZoneMessage = (data, id) => { if (!this.blocked.has(id)) this.message(data, id, () => this.handleFor(id)); };
     // relayed messages name a peer only when it's one the game can see (in my zone room)
     topology.onLevelMessage = (data, origin) => { if (!this.blocked.has(origin)) this.message(data, origin, () => this.visibleHandle(origin)); };
-    topology.onWorldMessage = (data, origin) => this.message(data, origin, () => RELAYED_PEER);
+    topology.onWorldMessage = (data, origin) => { if (!this.banned.has(origin)) this.message(data, origin, () => RELAYED_PEER); };
   }
 
   handleFor(id) {
@@ -57,7 +59,22 @@ export class PeerHub {
     this.peerLeft(id);
   }
 
+  isBanned(id) { return this.banned.has(id); }
+
+  ban(id) {
+    this.banned.add(id);
+    this.block(id);
+  }
+
+  // Kicked: out of the shared world for good, playing alone from now on
+  leaveWorld() {
+    this.topology.leaveZone();
+    this.topology.setZone = () => {};
+    this.onLeaveWorld();
+  }
+
   unblock(id) {
+    if (this.banned.has(id)) return; // a kick isn't undone here
     if (this.blocked.delete(id) && this.topology.isZonePeer(id)) this.peerJoined(id);
   }
 
