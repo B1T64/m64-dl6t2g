@@ -9,8 +9,13 @@ export const WORLD_EPOCH = 4;
 
 const STORE_KEY = 'sm64web.epoch';
 
+// Every published build has a world of its own too: a copy kept from an older deploy
+// (a dead link, a saved page, someone hosting old files) never meets the current one.
+// Publishing therefore starts the world over; pages of the old build reload themselves.
+const BUILD = (import.meta.url.match(/\/v\/([^/]+)\//) || [])[1] || 'dev'; // this script lives in v/<build>/
+
 // The world name rooms are built from (net/peer_transport.js)
-export const worldName = room => `${room}~${WORLD_EPOCH}`;
+export const worldName = room => `${room}~${WORLD_EPOCH}~${BUILD}`;
 
 // True when this browser hasn't played this epoch yet; remembers that it now has
 export function isNewEpoch() {
