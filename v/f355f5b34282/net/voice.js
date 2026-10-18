@@ -44,8 +44,16 @@ export class VoiceChat {
     this.context = null;
 
     topology.onZoneStream = (stream, id) => this.received(stream, id);
-    topology.addPeerLeaveListener(id => { this.dropIncoming(id); this.sendingTo.delete(id); });
+    topology.addPeerLeaveListener(id => this.forget(id));
     this.stopUpdates = every(this.options.updateMs, () => this.update());
+  }
+
+  // A roommate gone (or I'm changing rooms: the room is still mine here). My voice is
+  // taken off our connection now: changing rooms keeps the same peer connection, and a
+  // stream still on it can't be added again in the next room, so no audio would arrive.
+  forget(id) {
+    this.dropIncoming(id);
+    if (this.sendingTo.delete(id) && this.mic) this.topology.removeZoneStream(this.mic, id);
   }
 
   get talking() { return this.mic !== null; }

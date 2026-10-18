@@ -64,7 +64,16 @@ class TrysteroRoom extends RoomBase {
     this.action?.send(bytes, to === undefined ? {} : { target: to }).catch(() => {}); // peer may be gone
   }
 
-  addStream(stream, to) { this.room?.addStream(stream, to); }
+  // A stream still on the peer connection (left there by another room) is taken off and
+  // put back, so this room's peer gets it
+  addStream(stream, to) {
+    if (!this.room) return;
+    try {
+      this.room.addStream(stream, to);
+    } catch {
+      try { this.room.removeStream(stream, to); this.room.addStream(stream, to); } catch {}
+    }
+  }
   removeStream(stream, to) { this.room?.removeStream(stream, to); }
 
   leave() {
