@@ -66,6 +66,10 @@ export class PeerHub {
     this.block(id);
   }
 
+  unban(id) {
+    if (this.banned.delete(id)) this.unblock(id);
+  }
+
   // Kicked: out of the shared world for good, playing alone from now on
   leaveWorld() {
     this.topology.leaveZone();

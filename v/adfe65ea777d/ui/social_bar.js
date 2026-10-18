@@ -49,7 +49,6 @@ const STYLE = `
   #voice .player.blocked .name { opacity: .45; text-decoration: line-through; }
   #voice .player button { padding: 3px 9px; border-radius: 8px; border: 1px solid rgba(255,255,255,.3); background: transparent;
     color: rgba(255,255,255,.85); font: 600 11px system-ui, sans-serif; cursor: pointer; }
-  #voice .player button.kick { border-color: rgba(255,120,120,.6); color: #ffb0b0; }
   #voice .empty { font: 12px system-ui, sans-serif; color: rgba(255,255,255,.5); }
 `;
 
@@ -82,18 +81,9 @@ function switchRow({ icon, label, question, yes, isOn, turnOn, turnOff, changed 
   return row;
 }
 
-// The host's: out of the world for everyone (net/kicks.js), after asking
-function kickButton(id, player, hub, hostKey, rerender) {
-  const kick = element('button', 'kick', 'Expulsar');
-  kick.addEventListener('click', () => ask(`¿Expulsar a ${player.name || 'este jugador'}? Desaparece para todos y no puede volver a entrar.`, 'Expulsar',
-    () => hub.kicks.kickAsHost(id, hostKey).then(rerender, err => console.warn('kick failed:', err))));
-  return kick;
-}
-
-function playerRow(id, player, { voice, hub, hostKey }, rerender) {
+function playerRow(id, player, { voice, hub }, rerender) {
   const blocked = hub.isBlocked(id);
   const row = element('div', blocked ? 'player blocked' : 'player', `<span class="mic">${ICONS.mic}</span><span class="name"></span><span class="status"></span><button></button>`);
-  if (hostKey && !hub.isBanned(id)) row.appendChild(kickButton(id, player, hub, hostKey, rerender));
   row.dataset.id = id;
   row.querySelector('.mic').classList.toggle('on', player.talking);
   row.querySelector('.name').textContent = player.name || 'Jugador';
@@ -103,7 +93,7 @@ function playerRow(id, player, { voice, hub, hostKey }, rerender) {
   return row;
 }
 
-export function startSocialBar({ roster, voice, hub, hostKey = null }) {
+export function startSocialBar({ roster, voice, hub }) {
   const style = document.createElement('style');
   style.textContent = STYLE;
   document.head.appendChild(style);
@@ -131,7 +121,7 @@ export function startSocialBar({ roster, voice, hub, hostKey = null }) {
     room.replaceChildren(element('div', 'title'));
     room.firstChild.textContent = `En tu sala (${roster.players.size})`;
     if (roster.players.size === 0) room.appendChild(element('div', 'empty', 'Nadie más por ahora'));
-    for (const [id, player] of roster.players) room.appendChild(playerRow(id, player, { voice, hub, hostKey }, renderRoom));
+    for (const [id, player] of roster.players) room.appendChild(playerRow(id, player, { voice, hub }, renderRoom));
     showPill();
   };
 
