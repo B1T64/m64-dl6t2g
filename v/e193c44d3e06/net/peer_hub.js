@@ -5,6 +5,13 @@
 // it (their world-wide progress still counts, like anyone's).
 import { RateLimiter } from './rate_limit.js';
 
+// FNV-1a over the id, never 0 (0 means unknown)
+function orderOfId(id) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) { h ^= id.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h || 1;
+}
+
 export const EVENT = { PEER_JOINED: 1, PEER_LEFT: 2, MESSAGE: 3 }; // mirrors WebTransportEventType
 export const RELAYED_PEER = 0;                                      // mirrors WEB_TRANSPORT_RELAYED_PEER
 const MAX_QUEUED_EVENTS = 4096;                                     // a paused game must not grow it forever
@@ -81,6 +88,11 @@ export class PeerHub {
     if (this.banned.has(id)) return; // a kick isn't undone here
     if (this.blocked.delete(id) && this.topology.isZonePeer(id)) this.peerJoined(id);
   }
+
+  // Orders: the same number for a peer in every page (a hash of its id), so all pages
+  // agree on who leads an area (src/pc/web/web_world.c web_world_leads_area)
+  orderOf(handle) { const id = this.idByHandle.get(handle); return id ? orderOfId(id) : 0; }
+  myOrder() { const id = this.topology.zone?.room.selfId; return id ? orderOfId(id) : 0; }
 
   // The game's handle for a roommate it draws, if any (voice.js asks how far they are)
   handleOf(id) { return this.handleById.get(id); }
